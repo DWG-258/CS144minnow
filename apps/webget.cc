@@ -4,13 +4,53 @@
 #include <iostream>
 #include <span>
 #include <string>
-
+#include <unistd.h>
 using namespace std;
 
+//todo
 void get_URL( const string& host, const string& path )
 {
   cerr << "Function called: get_URL(" << host << ", " << path << ")\n";
-  cerr << "Warning: get_URL() has not been implemented yet.\n";
+  // cerr << "Warning: get_URL() has not been implemented yet.\n";
+  Address addr(host,"http");
+  TCPSocket socket;
+  socket.connect(addr);
+
+  std::string request="GET "+path+" HTTP/1.1\r\n"+
+  "Host: "+host+"\r\n"+
+  "Connection: close\r\n"+
+  "\r\n";
+
+  socket.write(request);
+  //注意：声明了buffers后要分配缓区不然无法读取数据
+ vector<string> buffers;
+
+  while(!socket.eof())
+  {
+    sleep(1);
+    buffers.clear();
+    buffers.emplace_back();                 // 至少一个缓冲区
+    buffers.back().resize(4096);            // 指定读取大小
+ 
+
+    socket.read(buffers);
+
+    // 如果本次读取为空，继续检查是否到 EOF
+    if (buffers[0].empty()) {
+        break;
+    }
+
+    for (const auto &buffer : buffers) {
+        cout << buffer;
+      
+       
+    }
+
+   
+  }
+
+ 
+  socket.close();
 }
 
 int main( int argc, char* argv[] )
