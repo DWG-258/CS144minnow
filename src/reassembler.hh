@@ -1,7 +1,10 @@
 #pragma once
 
 #include "byte_stream.hh"
-
+#include <map>
+#include <array>
+#include<set>
+#include <algorithm>
 class Reassembler
 {
 public:
@@ -23,6 +26,7 @@ public:
    * but can't yet be written (because earlier bytes remain unknown), it should store them
    * internally until the gaps are filled in.
    *
+   * 
    * The Reassembler should discard any bytes that lie beyond the stream's available capacity
    * (i.e., bytes that couldn't be written even if earlier gaps get filled in).
    *
@@ -40,7 +44,14 @@ public:
 
   // Access output stream writer, but const-only (can't write from outside)
   const Writer& writer() const { return output_.writer(); }
+  std::string combine(uint64_t first_index,std::string& data);
+  std::string find_buffer_in_reassembler(uint64_t first_index,std::string& data);
 
 private:
   ByteStream output_;
+  //存储待处理的数据
+  std::map<uint64_t,std::string> buffer_in_reassembler={};
+  // uint64_t total_bytes_pending = 0;
+  uint64_t byte_writed_index = 0;
+  uint64_t eof_index = -1;
 };
