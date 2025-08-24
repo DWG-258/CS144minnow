@@ -9,7 +9,7 @@ void Writer::push( string data )
   (void)data; // Your code here.
   if ( close_ ) {
     printf( "Writer is closed\n" );
-    printf("total_push_: %lu",total_push_);
+    printf( "total_push_: %lu", total_push_ );
     return;
   }
   if ( current_size_ + data.size() > capacity_ ) {
@@ -40,7 +40,7 @@ uint64_t Writer::available_capacity() const
 }
 uint64_t Writer::get_capacity() const
 {
-  return capacity_ ; // Your code here.
+  return capacity_; // Your code here.
 }
 uint64_t Writer::bytes_pushed() const
 {

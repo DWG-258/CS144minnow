@@ -2,6 +2,7 @@
 
 #include "byte_stream.hh"
 #include <map>
+#include <unordered_map>
 #include <array>
 #include<set>
 #include <algorithm>
@@ -46,11 +47,12 @@ public:
   const Writer& writer() const { return output_.writer(); }
   std::string combine(uint64_t first_index,std::string& data);
   std::string find_buffer_in_reassembler(uint64_t first_index,std::string& data);
-
+  std::string check_reassembler(uint64_t first_index,std::string& data,bool isCache);
 private:
   ByteStream output_;
   //存储待处理的数据
   std::map<uint64_t,std::string> buffer_in_reassembler={};
+  std::map<uint64_t,uint64_t> data_index={};
   // uint64_t total_bytes_pending = 0;
   uint64_t byte_writed_index = 0;
   uint64_t eof_index = -1;
