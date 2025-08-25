@@ -7,6 +7,8 @@ void TCPReceiver::receive( TCPSenderMessage message )
 {
   // Your code here.
   debug( "unimplemented receive() called" );
+  if(message.RST) return;
+  
   (void)message;
 }
 

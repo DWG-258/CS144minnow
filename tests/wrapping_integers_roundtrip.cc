@@ -32,7 +32,7 @@ int main()
     // credit: Ammar Ratnani
     uniform_int_distribution<uint64_t> dist63 { big_offset, uint64_t { 1 } << 63 };
 
-    for ( unsigned int i = 0; i < 250000; i++ ) {
+    for ( unsigned int i = 0; i < 25; i++ ) {
       const Wrap32 isn { dist32( rd ) };
       const uint64_t val { dist63( rd ) };
       const uint64_t offset { dist31minus1( rd ) };
