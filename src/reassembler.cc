@@ -38,6 +38,10 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
     data = data.substr( 0, std::min( data.size(),  capacity-first_index));
     check_reassembler( first_index, data, true );
   }
+  if ( is_last_substring ) {
+    eof_index = std::max(eof_index,first_index + data.size());
+  }
+  debug( "insert(byte_writed_index={}, eof_index={},{})", byte_writed_index, eof_index, is_last_substring );
   // 关闭流
   if ( byte_writed_index == eof_index ) {
     output_.writer().close();
@@ -53,10 +57,6 @@ uint64_t Reassembler::count_bytes_pending() const
   }
   debug( "count_bytes_pending() = {}", total_bytes_pending );
   return total_bytes_pending;
-}
-bool isOverlap( uint64_t l1, uint64_t r1, uint64_t l2, uint64_t r2 )
-{
-  return ( l1 < r2 ) && ( l2 < r1 );
 }
 std::string overlap( uint64_t first_d1, string& d1, uint64_t first_d2, string& d2 )
 {

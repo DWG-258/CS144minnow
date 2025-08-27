@@ -48,6 +48,11 @@ public:
   std::string combine(uint64_t first_index,std::string& data);
   std::string find_buffer_in_reassembler(uint64_t first_index,std::string& data);
   std::string check_reassembler(uint64_t first_index,std::string& data,bool isCache);
+  uint64_t get_eof() {
+    return eof_index;
+  }
+  ByteStream& byteStream() { return output_; }
+  const ByteStream& byteStream() const { return output_; }
 private:
   ByteStream output_;
   //存储待处理的数据
