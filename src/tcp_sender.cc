@@ -21,18 +21,41 @@ uint64_t TCPSender::consecutive_retransmissions() const
 void TCPSender::push( const TransmitFunction& transmit )
 {
   debug( "unimplemented push() called" );
-  (void)transmit;
+  TCPSenderMessage msg = make_empty_message();
+  if(reader().is_finished()){
+    msg.FIN=true;
+  }
+    uint64_t send_size=window_size_;
+  if(send_size>TCPConfig::MAX_PAYLOAD_SIZE){
+    send_size=TCPConfig::MAX_PAYLOAD_SIZE;
+  }
+  read(reader(),send_size,msg.payload);
+
+  uint64_t seq=reader().bytes_popped();
+  if(seq==0){
+    msg.SYN=true;
+  }
+  msg.seqno=msg.seqno.wrap( seq, msg.seqno );
+  
+
+  transmit( msg );
+
 }
 
 TCPSenderMessage TCPSender::make_empty_message() const
 {
   debug( "unimplemented make_empty_message() called" );
-  return {};
+  TCPSenderMessage msg;
+  return msg;
 }
 
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
   debug( "unimplemented receive() called" );
+  window_size_=msg.window_size;
+  if(msg.ackno.has_value())
+  { 
+  }
   (void)msg;
 }
 

@@ -42,4 +42,6 @@ private:
   ByteStream input_;
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
+  uint16_t window_size_ = 1;
+  std::unordered_map<uint64_t,string> segments_unfinished_; 
 };
