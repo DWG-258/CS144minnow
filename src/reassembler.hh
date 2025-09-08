@@ -51,6 +51,9 @@ public:
   uint64_t get_eof() {
     return eof_index;
   }
+  uint64_t get_byte(){
+    return byte_writed_index;
+  }
   ByteStream& byteStream() { return output_; }
   const ByteStream& byteStream() const { return output_; }
 private:
@@ -60,5 +63,5 @@ private:
   std::map<uint64_t,uint64_t> data_index={};
   // uint64_t total_bytes_pending = 0;
   uint64_t byte_writed_index = 0;
-  uint64_t eof_index = -1;
+  uint64_t eof_index = UINT64_MAX;
 };
