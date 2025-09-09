@@ -7,45 +7,34 @@
 
 #include <functional>
 
-
-
 class RetransTimer
 {
 private:
-  bool is_running_ {false};
+  bool is_running_ { false };
   uint64_t RTO_ms_;
+
 public:
-  RetransTimer(uint64_t RTO_ms):RTO_ms_(RTO_ms){}
-  void start(){
-    is_running_ = true;
-  }
-  void stop(){
-    is_running_ = false;
-  }
-  bool is_running(){
-    return is_running_;
-  }
- 
-  void set_RTO(uint64_t RTO_ms){
-    RTO_ms_ = RTO_ms;
-  }
-  uint64_t get_RTO()
+  RetransTimer( uint64_t RTO_ms ) : RTO_ms_( RTO_ms ) {}
+  void start() { is_running_ = true; }
+  void stop() { is_running_ = false; }
+  bool is_running() { return is_running_; }
+
+  void set_RTO( uint64_t RTO_ms ) { RTO_ms_ = RTO_ms; }
+  uint64_t get_RTO() { return RTO_ms_; }
+  void reduce_time( uint64_t ms )
   {
-    return RTO_ms_;
-  }
-  void reduce_time(uint64_t ms)
-  {
-    if(RTO_ms_ > ms)
-    RTO_ms_ -= ms;
-    else RTO_ms_ = 0;
+    if ( RTO_ms_ > ms )
+      RTO_ms_ -= ms;
+    else
+      RTO_ms_ = 0;
   }
 };
 
-  struct msg_with_timer
-  {
-    TCPSenderMessage msg;
-    RetransTimer timer;
-  };
+struct msg_with_timer
+{
+  TCPSenderMessage msg;
+  RetransTimer timer;
+};
 class TCPSender
 {
 public:
@@ -76,30 +65,31 @@ public:
   const Reader& reader() const { return input_.reader(); }
   Writer& writer() { return input_.writer(); }
 
-  void restart_timer(uint64_t ms) {
- 
-    retrans_timer_.set_RTO(ms);
+  void restart_timer( uint64_t ms )
+  {
+
+    retrans_timer_.set_RTO( ms );
     retrans_timer_.start();
   }
+
 private:
   Reader& reader() { return input_.reader(); }
 
-  
   ByteStream input_;
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
-  RetransTimer retrans_timer_{initial_RTO_ms_};
-  uint64_t RTO_ms_ {initial_RTO_ms_};
+  RetransTimer retrans_timer_ { initial_RTO_ms_ };
+  uint64_t RTO_ms_ { initial_RTO_ms_ };
   // msg_with_timer msg_with_timer_{{},retrans_timer_};
-  TCPSenderMessage first_unack_msg_{};
-  uint16_t window_size_  {1};
-  std::map<uint64_t,TCPSenderMessage> outstanding_sequences_{}; 
-  std::map<uint64_t,TCPSenderMessage> sender_sequences_{};  
-  uint64_t window_left_edge_ {0};
-  uint64_t old_max_seq_ {0};
-  uint64_t stream_seq_ {0};
-  uint64_t lived_time_ {0};
-  uint64_t consecutive_retransmissions_count_ {0};
-  bool is_fin_sent_ {false};
-  uint64_t sequence_size_aftercut_ {0}; 
+  TCPSenderMessage first_unack_msg_ {};
+  uint16_t window_size_ { 1 };
+  std::map<uint64_t, TCPSenderMessage> outstanding_sequences_ {};
+  std::map<uint64_t, TCPSenderMessage> sender_sequences_ {};
+  uint64_t window_left_edge_ { 0 };
+  uint64_t old_max_seq_ { 0 };
+  uint64_t stream_seq_ { 0 };
+  uint64_t lived_time_ { 0 };
+  uint64_t consecutive_retransmissions_count_ { 0 };
+  bool is_fin_sent_ { false };
+  uint64_t sequence_size_aftercut_ { 0 };
 };

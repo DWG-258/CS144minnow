@@ -27,12 +27,11 @@ public:
 
 private:
   Reassembler reassembler_;
-  Wrap32 start_stream_ {0};
-  uint64_t checkpoint_ {0};
-  bool is_last_substr_ {false};
+  Wrap32 start_stream_ { 0 };
+  uint64_t checkpoint_ { 0 };
   std::optional<Wrap32> next_seq_no_ {};
-  uint64_t first_index_in_TCP {0};
-  bool syn_received_ {false};
-  bool str_finished_ {false};
-  bool fin_received_ {false};
+  uint64_t first_index_in_TCP { 0 };
+  bool syn_received_ { false };
+  bool str_finished_ { false };
+  bool fin_received_ { false };
 };

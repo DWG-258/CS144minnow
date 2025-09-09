@@ -29,27 +29,26 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
 
     // index刚好等于
     data = check_reassembler( first_index, data, false );
-    data = data.substr( 0, std::min( data.size(),  writer().available_capacity() ) );
+    data = data.substr( 0, std::min( data.size(), writer().available_capacity() ) );
     output_.writer().push( data );
 
     byte_writed_index += data.size();
   } else {
     // 如果是后面的，则判断是否满足容量，不满足就丢弃，若满足还要在判断重叠
-    //逻辑错误修改，capacity是bytestream窗口的大小，eof_index才是data最后的大小（需要多个window大小）
-    if(first_index<=eof_index){
-      data = data.substr( 0, std::min( data.size(),capacity-first_index));
+    // 逻辑错误修改，capacity是bytestream窗口的大小，eof_index才是data最后的大小（需要多个window大小）
+    if ( first_index <= eof_index ) {
+      data = data.substr( 0, std::min( data.size(), capacity - first_index ) );
       check_reassembler( first_index, data, true );
     }
   }
   if ( is_last_substring ) {
-    eof_index = std::max(eof_index,first_index + data.size());
+    eof_index = std::max( eof_index, first_index + data.size() );
   }
 
   // 关闭流
   if ( byte_writed_index == eof_index ) {
     output_.writer().close();
   }
-
 }
 // How many bytes are stored in the Reassembler itself?
 // This function is for testing only; don't add extra state to support it.
@@ -66,35 +65,34 @@ std::string overlap( uint64_t first_d1, string& d1, uint64_t first_d2, string& d
 {
   uint64_t r1 = first_d1 + d1.size();
   uint64_t r2 = first_d2 + d2.size();
-    if(r1==first_d2)
-    {
-      return d1+d2;
-    }
+  if ( r1 == first_d2 ) {
+    return d1 + d2;
+  }
 
-    if ( first_d1 < first_d2 && r1 <= r2 ) {
-      return d1.substr( 0, first_d2- first_d1 ) + d2;
-    }
-    if ( first_d1 >= first_d2 && r1 <= r2 ) {
-      return d2;
-    }
-    if ( first_d1 < first_d2 && r1 > r2 ) {
-      return d1;
-    }
-   
-    if ( first_d1 >= first_d2 && r1 > r2 ) {
-      return d2 + d1.substr( r2 - first_d1 );
-    }
-       if(r2==first_d1)
-    {
-      return d2+d1;
-    }
-  
+  if ( first_d1 < first_d2 && r1 <= r2 ) {
+    return d1.substr( 0, first_d2 - first_d1 ) + d2;
+  }
+  if ( first_d1 >= first_d2 && r1 <= r2 ) {
+    return d2;
+  }
+  if ( first_d1 < first_d2 && r1 > r2 ) {
+    return d1;
+  }
+
+  if ( first_d1 >= first_d2 && r1 > r2 ) {
+    return d2 + d1.substr( r2 - first_d1 );
+  }
+  if ( r2 == first_d1 ) {
+    return d2 + d1;
+  }
+
   return d1;
 }
 
 std::string Reassembler::check_reassembler( uint64_t first_index, std::string& data, bool isCache )
 {
-  if(data.empty()) return data;
+  if ( data.empty() )
+    return data;
   uint64_t last_index = first_index + data.size();
   auto it = buffer_in_reassembler.lower_bound( first_index );
   // 检查前一个区间
@@ -108,7 +106,7 @@ std::string Reassembler::check_reassembler( uint64_t first_index, std::string& d
   std::string temp_data = data;
   // 合并所有重叠区间
   while ( it != buffer_in_reassembler.end() && it->first <= last_index ) {
-    
+
     newL = std::max( newL, it->first + it->second.size() );
     temp_data = overlap( newF, temp_data, it->first, it->second );
     newF = std::min( newF, it->first );
@@ -118,6 +116,6 @@ std::string Reassembler::check_reassembler( uint64_t first_index, std::string& d
     // 插入合并后的新区间
     buffer_in_reassembler[newF] = temp_data;
   }
-  
+
   return temp_data;
 }

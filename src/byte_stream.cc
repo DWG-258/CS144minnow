@@ -69,7 +69,7 @@ void Reader::pop( uint64_t len )
 
 bool Reader::is_finished() const
 {
-    debug( "is_finished: {},{}",close_,current_size_);
+
   if ( close_ && current_size_ == 0 )
     return true;
   else

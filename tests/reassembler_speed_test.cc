@@ -1,5 +1,6 @@
 #include "reassembler.hh"
 
+#include "debug.hh"
 #include <chrono>
 #include <cstddef>
 #include <fstream>
@@ -8,7 +9,6 @@
 #include <queue>
 #include <random>
 #include <tuple>
-#include "debug.hh"
 
 using namespace std;
 using namespace std::chrono;
@@ -53,7 +53,7 @@ void speed_test( const size_t num_chunks,  // NOLINT(bugprone-easily-swappable-p
   output_data.reserve( data.size() );
 
   const auto start_time = steady_clock::now();
-  cerr<<split_data.size()<<" chunks"<<endl;
+  cerr << split_data.size() << " chunks" << endl;
   while ( not split_data.empty() ) {
     auto& next = split_data.front();
     reassembler.insert( get<uint64_t>( next ), move( get<string>( next ) ), get<bool>( next ) );
@@ -68,8 +68,10 @@ void speed_test( const size_t num_chunks,  // NOLINT(bugprone-easily-swappable-p
   const auto stop_time = steady_clock::now();
 
   if ( not reassembler.reader().is_finished() ) {
-    cerr << "Reassembler did not close ByteStream when finished "<<reassembler.reader().bytes_buffered()<<reassembler.writer().is_closed()<<std::endl;
-    cerr<<reassembler.get_byte()<<" "<<reassembler.get_eof()<<data.size()<<output_data.size()<<std::endl;
+    cerr << "Reassembler did not close ByteStream when finished " << reassembler.reader().bytes_buffered()
+         << reassembler.writer().is_closed() << std::endl;
+    cerr << reassembler.get_byte() << " " << reassembler.get_eof() << data.size() << output_data.size()
+         << std::endl;
 
     throw runtime_error( "Reassembler did not close ByteStream when finished" );
   }
