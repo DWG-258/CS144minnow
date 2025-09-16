@@ -130,7 +130,6 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 
   if ( !is_cut ) {
     sequence_size_aftercut_ = 0;
-    // first_unack_msg_=it->second;
   }
 
   if ( window_left_edge_ > old_max_seq_ ) {
@@ -150,8 +149,6 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
 
 void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& transmit )
 {
-
-  lived_time_ += ms_since_last_tick;
   // the timer is always for the first unacknoed sequence
   // timer running
   if ( retrans_timer_.is_running() ) {

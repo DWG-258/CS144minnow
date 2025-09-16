@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <queue>
+#include <unordered_map>
 
 // A "network interface" that connects IP (the internet layer, or network layer)
 // with Ethernet (the network access layer, or link layer).
@@ -60,6 +61,12 @@ public:
   // Called periodically when time elapses
   void tick( size_t ms_since_last_tick );
 
+  // // Transforms an IP datagram to an Ethernet frame
+  // EthernetFrame IPdatagram_transTo_EthernetFrame(const InternetDatagram& dgram);
+
+  // // Transforms an Ethernet frame to an IP datagram
+  // InternetDatagram EthernetFrame_transTo_IPdatagram(const EthernetFrame& frame);
+
   // Accessors
   const std::string& name() const { return name_; }
   const OutputPort& output() const { return *port_; }
@@ -82,4 +89,13 @@ private:
 
   // Datagrams that have been received
   std::queue<InternetDatagram> datagrams_received_ {};
+
+  // Datagrams that are waiting to be sent out
+  std::queue<InternetDatagram> datagrams_cache_ {};
+
+  // ARP table (IP address -> Ethernet address)
+  std::unordered_map<uint32_t,EthernetAddress> ARP_table_ {};
+
+  //IP and Ethernet address Mapping timer
+  std::unordered_map<uint32_t,int> ARP_timer_ {};
 };

@@ -67,7 +67,6 @@ public:
 
   void restart_timer( uint64_t ms )
   {
-
     retrans_timer_.set_RTO( ms );
     retrans_timer_.start();
   }
@@ -88,7 +87,6 @@ private:
   uint64_t window_left_edge_ { 0 };
   uint64_t old_max_seq_ { 0 };
   uint64_t stream_seq_ { 0 };
-  uint64_t lived_time_ { 0 };
   uint64_t consecutive_retransmissions_count_ { 0 };
   bool is_fin_sent_ { false };
   uint64_t sequence_size_aftercut_ { 0 };
