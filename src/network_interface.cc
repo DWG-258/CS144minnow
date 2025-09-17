@@ -31,24 +31,16 @@ NetworkInterface::NetworkInterface( string_view name,
 void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Address& next_hop )
 {
   debug( "unimplemented send_datagram called" );
-  //TODO internetDatagram trans to EnthernetFrame,send to next_hop
- 
-  // Parser parser;
   //first check ARP_table, if find, send to next_hop(TODO)
   if(ARP_table_.find(next_hop.ipv4_numeric())!=ARP_table_.end()){
-     EthernetFrame send_frame;
-     send_frame.header.src=ethernet_address_;
-     send_frame.header.dst = ARP_table_[next_hop.ipv4_numeric()];
-     send_frame.header.type = EthernetHeader::TYPE_IPv4;
-    //serialize dgram to string stream(put into send_frame.payload)
-     Serializer serializer;
-     dgram.serialize(serializer);
-    send_frame.payload=serializer.finish();
     //send
-    transmit( send_frame );
+    transmit( IPdatagram_transTo_EthernetFrame(dgram,next_hop.ipv4_numeric()) );
   }
   else{
     //send ARP request(dst address is broadcast)
+    if(ARP_table_.find(next_hop.ipv4_numeric())==ARP_table_.end()){
+      return;
+    }
      EthernetFrame send_frame;
      send_frame.header.src=ethernet_address_;
      send_frame.header.dst=ETHERNET_BROADCAST;
@@ -69,6 +61,8 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
      datagrams_cache_.push(dgram);
      //send arp_request
      transmit( send_frame );
+     //start timer for 5s
+     ARP_timer_[next_hop.ipv4_numeric()]=5000;
   }
  
 
@@ -92,7 +86,7 @@ void NetworkInterface::recv_frame( EthernetFrame frame )
     //remember the mapping between the sender’s IP address and Ethernet address for 30 seconds
     //TODO,a timer?
     ARP_table_[arp_message.sender_ip_address]=arp_message.sender_ethernet_address;
-    ARP_timer_[arp_message.sender_ip_address]=30;
+    ARP_timer_[arp_message.sender_ip_address]=30000;
 
     if(arp_message.opcode==ARPMessage::OPCODE_REQUEST){
       //send ARP reply(dst address is sender address)
@@ -100,7 +94,7 @@ void NetworkInterface::recv_frame( EthernetFrame frame )
      send_frame.header.src=ethernet_address_;
      send_frame.header.dst=frame.header.src;
      send_frame.header.type = EthernetHeader::TYPE_ARP;
-     //
+    
      ARPMessage arp_reply;
      //set arp_message(as payload)
      arp_reply.sender_ethernet_address=ethernet_address_;
@@ -113,6 +107,14 @@ void NetworkInterface::recv_frame( EthernetFrame frame )
      arp_reply.serialize(serializer);
      send_frame.payload=serializer.finish();
      transmit( send_frame );
+    }
+    else if(arp_message.opcode==ARPMessage::OPCODE_REPLY){
+      //send cached datagram
+      if(!datagrams_cache_.empty()){
+        InternetDatagram dgram=datagrams_cache_.front();
+        datagrams_cache_.pop();
+        transmit( IPdatagram_transTo_EthernetFrame(dgram,arp_message.sender_ip_address));
+      }
     }
   
   }
@@ -136,8 +138,7 @@ void NetworkInterface::tick( const size_t ms_since_last_tick )
 {
   debug( "unimplemented tick({}) called", ms_since_last_tick );
   //all done,wait for test
-  for(auto it=ARP_timer_.begin();it!=ARP_timer_.end();it++)
-  {
+  for(auto it=ARP_timer_.begin();it!=ARP_timer_.end();it++)  {
     it->second-=ms_since_last_tick;
     if(it->second<=0){
       ARP_timer_.erase(it);
@@ -145,6 +146,24 @@ void NetworkInterface::tick( const size_t ms_since_last_tick )
     }
 
   }
+
+  for(auto it=ARP_timer_.begin();it!=ARP_timer_.end();it++) {
+    it->second-=ms_since_last_tick;
+    if(it->second<=0) {
+      ARP_timer_.erase(it);
+    }
+  }
 }
 
-
+ EthernetFrame NetworkInterface::IPdatagram_transTo_EthernetFrame(const InternetDatagram& dgram,const uint32_t& next_hop)
+ {
+      EthernetFrame send_frame;
+     send_frame.header.src=ethernet_address_;
+     send_frame.header.dst = ARP_table_[next_hop];
+     send_frame.header.type = EthernetHeader::TYPE_IPv4;
+    //serialize dgram to string stream(put into send_frame.payload)
+     Serializer serializer;
+     dgram.serialize(serializer);
+      send_frame.payload=serializer.finish();
+      return send_frame;
+ }

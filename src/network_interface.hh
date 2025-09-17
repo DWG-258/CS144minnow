@@ -61,8 +61,8 @@ public:
   // Called periodically when time elapses
   void tick( size_t ms_since_last_tick );
 
-  // // Transforms an IP datagram to an Ethernet frame
-  // EthernetFrame IPdatagram_transTo_EthernetFrame(const InternetDatagram& dgram);
+  // Transforms an avaliable IP datagram to an Ethernet frame
+  EthernetFrame IPdatagram_transTo_EthernetFrame(const InternetDatagram& dgram,const uint32_t& next_hop);
 
   // // Transforms an Ethernet frame to an IP datagram
   // InternetDatagram EthernetFrame_transTo_IPdatagram(const EthernetFrame& frame);
@@ -98,4 +98,7 @@ private:
 
   //IP and Ethernet address Mapping timer
   std::unordered_map<uint32_t,int> ARP_timer_ {};
+
+  // ARP request timer
+  std::unordered_map<uint32_t,int> ARP_request_timer_ {};
 };
