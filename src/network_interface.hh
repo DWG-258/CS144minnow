@@ -29,6 +29,7 @@
 // the network interface passes it up the stack. If it's an ARP
 // request or reply, the network interface processes the frame
 // and learns or replies as necessary.
+
 class NetworkInterface
 {
 public:
@@ -62,10 +63,7 @@ public:
   void tick( size_t ms_since_last_tick );
 
   // Transforms an avaliable IP datagram to an Ethernet frame
-  EthernetFrame IPdatagram_transTo_EthernetFrame(const InternetDatagram& dgram,const uint32_t& next_hop);
-
-  // // Transforms an Ethernet frame to an IP datagram
-  // InternetDatagram EthernetFrame_transTo_IPdatagram(const EthernetFrame& frame);
+  EthernetFrame IPdatagram_transTo_EthernetFrame( const InternetDatagram& dgram, const uint32_t& next_hop );
 
   // Accessors
   const std::string& name() const { return name_; }
@@ -91,14 +89,18 @@ private:
   std::queue<InternetDatagram> datagrams_received_ {};
 
   // Datagrams that are waiting to be sent out
-  std::queue<InternetDatagram> datagrams_cache_ {};
+  // std::queue<Datagram_cache_info> datagrams_cache_ {};
+
+  std::unordered_map<uint32_t, std::queue<InternetDatagram>> datagrams_cache_ {};
+
+  // std::unordered_map<InternetDatagram,uint32_t> datagrams_cache_ {};
 
   // ARP table (IP address -> Ethernet address)
-  std::unordered_map<uint32_t,EthernetAddress> ARP_table_ {};
+  std::unordered_map<uint32_t, EthernetAddress> ARP_table_ {};
 
-  //IP and Ethernet address Mapping timer
-  std::unordered_map<uint32_t,int> ARP_timer_ {};
+  // IP and Ethernet address Mapping timer
+  std::unordered_map<uint32_t, int> ARP_timer_ {};
 
   // ARP request timer
-  std::unordered_map<uint32_t,int> ARP_request_timer_ {};
+  std::unordered_map<uint32_t, int> ARP_request_timer_ {};
 };

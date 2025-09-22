@@ -17,7 +17,6 @@ using namespace std;
 constexpr const char* TUN_DFLT = "tun144";
 constexpr const char* LOCAL_ADDRESS_DFLT = "169.254.144.9";
 
-
 namespace {
 void show_usage( const char* argv0, const char* msg )
 {
