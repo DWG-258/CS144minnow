@@ -21,6 +21,7 @@ void Router::add_route( const uint32_t route_prefix,
        << " on interface " << interface_num << "\n";
 
   debug( "unimplemented add_route() called" );
+  routing_table_.emplace(route_prefix,RouteTableEntry(route_prefix, prefix_length, next_hop, interface_num));
 }
 
 // Go through all the interfaces, and route every incoming datagram to its proper outgoing interface.
@@ -28,3 +29,9 @@ void Router::route()
 {
   debug( "unimplemented route() called" );
 }
+
+
+ RouteTableEntry Router::longest_prefix_match(uint32_t ip_dst)
+ {
+   
+ }
