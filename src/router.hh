@@ -4,14 +4,15 @@
 #include "network_interface.hh"
 
 #include <optional>
+#include <bitset>
 
   // A route table entry
   struct RouteTableEntry
   {
-    uint32_t route_prefix;
-    uint8_t prefix_length;
-    std::optional<Address> next_hop;
-    size_t interface_num;
+    uint32_t route_prefix {};
+    uint8_t prefix_length {};
+    std::optional<Address> next_hop {};
+    size_t interface_num {};
   };
 
 
@@ -42,7 +43,7 @@ public:
   void route();
 
   //longest prefix match 
-  RouteTableEntry longest_prefix_match(uint32_t ip_dst);
+  std::optional<RouteTableEntry> longest_prefix_match(uint32_t ip_dst);
 
 private:
   // The router's collection of network interfaces

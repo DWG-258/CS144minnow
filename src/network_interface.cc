@@ -36,8 +36,9 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
     transmit( IPdatagram_transTo_EthernetFrame( dgram, next_hop.ipv4_numeric() ) );
   } else {
     // cache datagram
-
-    datagrams_cache_[next_hop.ipv4_numeric()].emplace( dgram );
+   
+    
+    datagrams_cache_[next_hop.ipv4_numeric()].push( dgram );
 
     // send ARP request(dst address is broadcast)
     if ( ARP_request_timer_.find( next_hop.ipv4_numeric() ) != ARP_request_timer_.end() ) return;
@@ -114,6 +115,7 @@ void NetworkInterface::recv_frame( EthernetFrame frame )
         while ( !datagrams_cache_[recv_ip].empty() ) {
           auto cache_dgram = datagrams_cache_[recv_ip].front();
           datagrams_cache_[recv_ip].pop();
+    
           transmit( IPdatagram_transTo_EthernetFrame( cache_dgram, recv_ip ) );
         }
       }
@@ -126,10 +128,15 @@ void NetworkInterface::recv_frame( EthernetFrame frame )
     InternetDatagram ipv4_message;
     ipv4_message.parse( parser );
     if ( parser.has_error() ) {
-      throw runtime_error( "ipv4_message parse error" );
+      // throw runtime_error( "ipv4_message parse error" );
+     
+    
+      debug( "ipv4_message parse error" );
+      return;
     }
 
     datagrams_received_.push( ipv4_message );
+
   }
 }
 
@@ -154,11 +161,12 @@ void NetworkInterface::tick( const size_t ms_since_last_tick )
       if ( !datagrams_cache_[it->first].empty() )
         datagrams_cache_[it->first].pop();
       it = ARP_request_timer_.erase( it );
-
     } else {
       ++it;
     }
   }
+
+    
 }
 
 EthernetFrame NetworkInterface::IPdatagram_transTo_EthernetFrame( const InternetDatagram& dgram,
@@ -174,6 +182,6 @@ EthernetFrame NetworkInterface::IPdatagram_transTo_EthernetFrame( const Internet
   // serialize dgram to string stream(put into send_frame.payload)
   Serializer serializer;
   dgram.serialize( serializer );
-  send_frame.payload = serializer.finish();
+  send_frame.payload = std::move(serializer.finish());
   return send_frame;
 }

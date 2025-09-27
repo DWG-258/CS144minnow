@@ -30,10 +30,12 @@ void IPv4Header::parse( Parser& parser )
   parser.integer( dst );
 
   if ( ver != 4 ) {
+    printf( "IPv4Header::parse(): wrong IP version: %d\n", ver );
     parser.set_error();
   }
 
   if ( hlen < 5 ) {
+    printf( "IPv4Header::parse(): wrong header length: %d\n", hlen );
     parser.set_error();
   }
 
@@ -46,7 +48,7 @@ void IPv4Header::parse( Parser& parser )
   // Verify checksum
   const uint16_t given_cksum = cksum;
   compute_checksum();
-  if ( cksum != given_cksum ) {
+  if ( cksum != given_cksum ) { 
     parser.set_error();
   }
 }
