@@ -115,5 +115,4 @@ public:
   void buffer( Ref<std::string> buf );
   void buffer( const std::vector<Ref<std::string>>& bufs );
   std::vector<Ref<std::string>> finish();
- 
 };

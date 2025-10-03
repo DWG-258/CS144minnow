@@ -48,7 +48,7 @@ void IPv4Header::parse( Parser& parser )
   // Verify checksum
   const uint16_t given_cksum = cksum;
   compute_checksum();
-  if ( cksum != given_cksum ) { 
+  if ( cksum != given_cksum ) {
     parser.set_error();
   }
 }

@@ -3,18 +3,17 @@
 #include "exception.hh"
 #include "network_interface.hh"
 
-#include <optional>
 #include <bitset>
+#include <optional>
 
-  // A route table entry
-  struct RouteTableEntry
-  {
-    uint32_t route_prefix {};
-    uint8_t prefix_length {};
-    std::optional<Address> next_hop {};
-    size_t interface_num {};
-  };
-
+// A route table entry
+struct RouteTableEntry
+{
+  uint32_t route_prefix {};
+  uint8_t prefix_length {};
+  std::optional<Address> next_hop {};
+  size_t interface_num {};
+};
 
 // \brief A router that has multiple network interfaces and
 // performs longest-prefix-match routing between them.
@@ -42,15 +41,14 @@ public:
   // Route packets between the interfaces
   void route();
 
-  //longest prefix match 
-  std::optional<RouteTableEntry> longest_prefix_match(uint32_t ip_dst);
+  // longest prefix match
+  std::optional<RouteTableEntry> longest_prefix_match( uint32_t ip_dst );
 
 private:
   // The router's collection of network interfaces
   std::vector<std::shared_ptr<NetworkInterface>> interfaces_ {};
 
-
   // The router's routing table
-  //TO DO :A better way to store the routing table
-  std::unordered_map<uint32_t,RouteTableEntry> routing_table_ {};
+  // TO DO :A better way to store the routing table
+  std::unordered_map<uint32_t, RouteTableEntry> routing_table_ {};
 };
