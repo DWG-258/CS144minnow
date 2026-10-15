@@ -1,88 +1,75 @@
 #include "byte_stream.hh"
 
+#include <algorithm>
+
 using namespace std;
 
 ByteStream::ByteStream( uint64_t capacity ) : capacity_( capacity ) {}
 
 void Writer::push( string data )
 {
-  (void)data; // Your code here.
-  if ( close_ ) {
-    printf( "Writer is closed\n" );
-    printf( "total_push_: %lu", total_push_ );
+  if ( closed_ ) {
     return;
   }
-  if ( current_size_ + data.size() > capacity_ ) {
-    data = data.substr( 0, capacity_ - current_size_ );
+
+  // 只写入可用容量内的部分，一次性截断
+  const uint64_t avail = capacity_ - buffer_.size();
+  if ( data.size() > avail ) {
+    data.resize( avail );
   }
-  for ( auto d : data ) {
-    buffer.push_back( d );
-  }
-  current_size_ += data.size();
-  total_push_ += data.size();
+
+  buffer_ += data; // 批量 append，替代逐字节 push_back
+  total_pushed_ += data.size();
 }
 
 void Writer::close()
 {
-  // Your code here.
-  close_ = true;
+  closed_ = true;
 }
 
 bool Writer::is_closed() const
 {
-  return close_;
-  // Your code here.
+  return closed_;
 }
 
 uint64_t Writer::available_capacity() const
 {
-  return capacity_ - current_size_; // Your code here.
+  return capacity_ - buffer_.size();
 }
+
 uint64_t Writer::get_capacity() const
 {
-  return capacity_; // Your code here.
+  return capacity_;
 }
+
 uint64_t Writer::bytes_pushed() const
 {
-  return total_push_; // Your code here.
+  return total_pushed_;
 }
 
 string_view Reader::peek() const
 {
-  if ( buffer.empty() ) {
-    printf( "Reader is empty\n" );
-    return string_view();
-  }
-  string_view sv( &buffer.front(), 1 );
-  return sv; // Your code here.
+  return string_view( buffer_ ); // 返回整个可用区间，而非单字节
 }
 
 void Reader::pop( uint64_t len )
 {
-  (void)len; // Your code here.
-  for ( uint64_t i = 0; i < len; i++ ) {
-    buffer.pop_front();
-    current_size_--;
-    total_pop_++;
-  }
+  len = min( len, static_cast<uint64_t>( buffer_.size() ) );
+  buffer_.erase( 0, len ); // 一次性删除，替代逐字节 pop_front
+  total_popped_ += len;
 }
 
 bool Reader::is_finished() const
 {
-
-  if ( close_ && current_size_ == 0 )
-    return true;
-  else
-    return false;
-  // Your code here.
+  return closed_ && buffer_.empty();
 }
 
 uint64_t Reader::bytes_buffered() const
 {
-  return current_size_; // Your code here.
+  return buffer_.size();
 }
 
 uint64_t Reader::bytes_popped() const
 {
-  return total_pop_; // Your code here.
+  return total_popped_;
 }

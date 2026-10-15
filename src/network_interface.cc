@@ -1,7 +1,7 @@
 #include <iostream>
+#include <utility>
 
 #include "arp_message.hh"
-#include "debug.hh"
 #include "ethernet_frame.hh"
 #include "exception.hh"
 #include "helpers.hh"
@@ -9,8 +9,6 @@
 
 using namespace std;
 
-//! \param[in] ethernet_address Ethernet (what ARP calls "hardware") address of the interface
-//! \param[in] ip_address IP (what ARP calls "protocol") address of the interface
 NetworkInterface::NetworkInterface( string_view name,
                                     shared_ptr<OutputPort> port,
                                     const EthernetAddress& ethernet_address,
@@ -24,123 +22,107 @@ NetworkInterface::NetworkInterface( string_view name,
        << ip_address.ip() << "\n";
 }
 
-//! \param[in] dgram the IPv4 datagram to be sent
-//! \param[in] next_hop the IP address of the interface to send it to (typically a router or default gateway, but
-//! may also be another host if directly connected to the same network as the destination) Note: the Address type
-//! can be converted to a uint32_t (raw 32-bit IP address) by using the Address::ipv4_numeric() method.
 void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Address& next_hop )
 {
-  // first check ARP_table, if find, send to next_hop(TODO)
-  if ( ARP_table_.find( next_hop.ipv4_numeric() ) != ARP_table_.end() ) {
-    // send
-    transmit( IPdatagram_transTo_EthernetFrame( dgram, next_hop.ipv4_numeric() ) );
-  } else {
-    // cache datagram
+  const uint32_t next_hop_ip = next_hop.ipv4_numeric();
 
-    datagrams_cache_[next_hop.ipv4_numeric()].push( dgram );
-
-    // send ARP request(dst address is broadcast)
-    if ( ARP_request_timer_.find( next_hop.ipv4_numeric() ) != ARP_request_timer_.end() )
-      return;
-
-    EthernetFrame send_frame;
-    send_frame.header.src = ethernet_address_;
-    send_frame.header.dst = ETHERNET_BROADCAST;
-    send_frame.header.type = EthernetHeader::TYPE_ARP;
-    // TO DO ,purpuse is to find the MAC address of next_hop(use ARP)
-    ARPMessage arp_request;
-    // set arp_message(as payload)
-    arp_request.sender_ethernet_address = ethernet_address_;
-    arp_request.sender_ip_address = ip_address_.ipv4_numeric();
-    arp_request.target_ip_address = next_hop.ipv4_numeric();
-    arp_request.target_ethernet_address = ETHERNET_ZERO;
-    arp_request.opcode = ARPMessage::OPCODE_REQUEST;
-    // serialize arp_message to string stream(put into send_frame.payload)
-    Serializer serializer;
-    arp_request.serialize( serializer );
-    send_frame.payload = serializer.finish();
-    // send arp_request
-    transmit( send_frame );
-    // start timer for 5s
-    ARP_request_timer_[next_hop.ipv4_numeric()] = 5000;
+  if ( ARP_table_.find( next_hop_ip ) != ARP_table_.end() ) {
+    // 已知 MAC 地址，直接封装发送
+    transmit( wrap_datagram( dgram, next_hop_ip ) );
+    return;
   }
+
+  // 缓存数据报，等待 ARP 解析
+  datagrams_cache_[next_hop_ip].push( dgram );
+
+  // 若已在等待该 IP 的 ARP 回复，不再重复发请求
+  if ( ARP_request_timer_.find( next_hop_ip ) != ARP_request_timer_.end() ) {
+    return;
+  }
+
+  // 构造并发送 ARP 请求
+  ARPMessage arp_request;
+  arp_request.sender_ethernet_address = ethernet_address_;
+  arp_request.sender_ip_address = ip_address_.ipv4_numeric();
+  arp_request.target_ip_address = next_hop_ip;
+  arp_request.target_ethernet_address = ETHERNET_ZERO;
+  arp_request.opcode = ARPMessage::OPCODE_REQUEST;
+
+  EthernetFrame send_frame;
+  send_frame.header.src = ethernet_address_;
+  send_frame.header.dst = ETHERNET_BROADCAST;
+  send_frame.header.type = EthernetHeader::TYPE_ARP;
+  Serializer serializer;
+  arp_request.serialize( serializer );
+  send_frame.payload = serializer.finish();
+  transmit( send_frame );
+
+  ARP_request_timer_[next_hop_ip] = ARP_REQUEST_TIMEOUT_MS;
 }
 
-//! \param[in] frame the incoming Ethernet frame
 void NetworkInterface::recv_frame( EthernetFrame frame )
 {
   if ( frame.header.dst != ethernet_address_ && frame.header.dst != ETHERNET_BROADCAST ) {
     return;
   }
-  // ARP
+
   if ( frame.header.type == EthernetHeader::TYPE_ARP ) {
     Parser parser( frame.payload );
     ARPMessage arp_message;
     arp_message.parse( parser );
-    if ( parser.has_error() )
+    if ( parser.has_error() ) {
       throw runtime_error( "ARP_message parse error" );
+    }
 
-    // remember the mapping between the sender’s IP address and Ethernet address for 30 seconds
-    // TODO,a timer?
-    auto& recv_ip = arp_message.sender_ip_address;
-    ARP_table_[recv_ip] = arp_message.sender_ethernet_address;
-    ARP_timer_[recv_ip] = 30000;
+    // 学习 sender 的 IP -> MAC 映射，有效期 30 秒
+    const uint32_t sender_ip = arp_message.sender_ip_address;
+    ARP_table_[sender_ip] = arp_message.sender_ethernet_address;
+    ARP_timer_[sender_ip] = ARP_MAPPING_TIMEOUT_MS;
 
     if ( arp_message.opcode == ARPMessage::OPCODE_REQUEST ) {
-      if ( arp_message.target_ip_address != ip_address_.ipv4_numeric() )
-        return;
+      if ( arp_message.target_ip_address != ip_address_.ipv4_numeric() ) {
+        return; // 不是发给本机的请求
+      }
 
-      // send ARP reply(dst address is sender address)
+      // 回复 ARP
+      ARPMessage arp_reply;
+      arp_reply.sender_ethernet_address = ethernet_address_;
+      arp_reply.sender_ip_address = ip_address_.ipv4_numeric();
+      arp_reply.target_ip_address = sender_ip;
+      arp_reply.target_ethernet_address = arp_message.sender_ethernet_address;
+      arp_reply.opcode = ARPMessage::OPCODE_REPLY;
+
       EthernetFrame send_frame;
       send_frame.header.src = ethernet_address_;
       send_frame.header.dst = frame.header.src;
       send_frame.header.type = EthernetHeader::TYPE_ARP;
-
-      ARPMessage arp_reply;
-      // set arp_message(as payload)
-      arp_reply.sender_ethernet_address = ethernet_address_;
-      arp_reply.sender_ip_address = ip_address_.ipv4_numeric();
-      arp_reply.target_ip_address = recv_ip;
-      arp_reply.target_ethernet_address = arp_message.sender_ethernet_address;
-      arp_reply.opcode = ARPMessage::OPCODE_REPLY;
-      // serialize arp_reply to string stream(put into send_frame.payload)
       Serializer serializer;
       arp_reply.serialize( serializer );
       send_frame.payload = serializer.finish();
       transmit( send_frame );
     } else if ( arp_message.opcode == ARPMessage::OPCODE_REPLY ) {
-      // send cached datagram
-      if ( !datagrams_cache_.empty() ) {
-        while ( !datagrams_cache_[recv_ip].empty() ) {
-          auto cache_dgram = datagrams_cache_[recv_ip].front();
-          datagrams_cache_[recv_ip].pop();
-
-          transmit( IPdatagram_transTo_EthernetFrame( cache_dgram, recv_ip ) );
-        }
+      // 收到回复：清理请求定时器，冲刷缓存的数据报
+      ARP_request_timer_.erase( sender_ip );
+      auto& queue = datagrams_cache_[sender_ip];
+      while ( !queue.empty() ) {
+        transmit( wrap_datagram( queue.front(), sender_ip ) );
+        queue.pop();
       }
     }
-  }
-
-  // IPv4
-  if ( frame.header.type == EthernetHeader::TYPE_IPv4 ) {
+  } else if ( frame.header.type == EthernetHeader::TYPE_IPv4 ) {
     Parser parser( frame.payload );
     InternetDatagram ipv4_message;
     ipv4_message.parse( parser );
     if ( parser.has_error() ) {
-      // throw runtime_error( "ipv4_message parse error" );
-
-      debug( "ipv4_message parse error" );
       return;
     }
-
     datagrams_received_.push( ipv4_message );
   }
 }
 
-//! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
 void NetworkInterface::tick( const size_t ms_since_last_tick )
 {
-  // ARP erase
+  // 过期的 ARP 映射
   for ( auto it = ARP_timer_.begin(); it != ARP_timer_.end(); ) {
     it->second -= ms_since_last_tick;
     if ( it->second <= 0 ) {
@@ -150,13 +132,12 @@ void NetworkInterface::tick( const size_t ms_since_last_tick )
       ++it;
     }
   }
-  // safe version
+
+  // 过期的 ARP 请求：丢弃该 IP 的全部缓存数据报，允许重新发起请求
   for ( auto it = ARP_request_timer_.begin(); it != ARP_request_timer_.end(); ) {
     it->second -= ms_since_last_tick;
     if ( it->second <= 0 ) {
-      // for datagrams_cache_ that waiting over 5s , pop(), only for this test.
-      if ( !datagrams_cache_[it->first].empty() )
-        datagrams_cache_[it->first].pop();
+      datagrams_cache_.erase( it->first );
       it = ARP_request_timer_.erase( it );
     } else {
       ++it;
@@ -164,19 +145,19 @@ void NetworkInterface::tick( const size_t ms_since_last_tick )
   }
 }
 
-EthernetFrame NetworkInterface::IPdatagram_transTo_EthernetFrame( const InternetDatagram& dgram,
-                                                                  const uint32_t& next_hop )
+EthernetFrame NetworkInterface::wrap_datagram( const InternetDatagram& dgram, const uint32_t& next_hop )
 {
-  if ( ARP_table_.find( next_hop ) == ARP_table_.end() ) {
-    throw runtime_error( "ARP_table_ not find" );
+  auto it = ARP_table_.find( next_hop );
+  if ( it == ARP_table_.end() ) {
+    throw runtime_error( "ARP_table_ not found" );
   }
+
   EthernetFrame send_frame;
   send_frame.header.src = ethernet_address_;
-  send_frame.header.dst = ARP_table_[next_hop];
+  send_frame.header.dst = it->second;
   send_frame.header.type = EthernetHeader::TYPE_IPv4;
-  // serialize dgram to string stream(put into send_frame.payload)
   Serializer serializer;
   dgram.serialize( serializer );
-  send_frame.payload =  serializer.finish() ;
+  send_frame.payload = serializer.finish();
   return send_frame;
 }

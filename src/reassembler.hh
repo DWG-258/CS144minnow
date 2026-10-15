@@ -1,11 +1,8 @@
 #pragma once
 
 #include "byte_stream.hh"
-#include <algorithm>
-#include <array>
 #include <map>
-#include <set>
-#include <unordered_map>
+
 class Reassembler
 {
 public:
@@ -17,26 +14,17 @@ public:
    *   `first_index`: the index of the first byte of the substring
    *   `data`: the substring itself
    *   `is_last_substring`: this substring represents the end of the stream
-   *   `output`: a mutable reference to the Writer
    *
    * The Reassembler's job is to reassemble the indexed substrings (possibly out-of-order
    * and possibly overlapping) back into the original ByteStream. As soon as the Reassembler
    * learns the next byte in the stream, it should write it to the output.
    *
-   * If the Reassembler learns about bytes that fit within the stream's available capacity
-   * but can't yet be written (because earlier bytes remain unknown), it should store them
-   * internally until the gaps are filled in.
-   *
-   *
-   * The Reassembler should discard any bytes that lie beyond the stream's available capacity
-   * (i.e., bytes that couldn't be written even if earlier gaps get filled in).
-   *
+   * The Reassembler should discard any bytes that lie beyond the stream's available capacity.
    * The Reassembler should close the stream after writing the last byte.
    */
   void insert( uint64_t first_index, std::string data, bool is_last_substring );
 
   // How many bytes are stored in the Reassembler itself?
-  // This function is for testing only; don't add extra state to support it.
   uint64_t count_bytes_pending() const;
 
   // Access output stream reader
@@ -45,20 +33,22 @@ public:
 
   // Access output stream writer, but const-only (can't write from outside)
   const Writer& writer() const { return output_.writer(); }
-  std::string combine( uint64_t first_index, std::string& data );
-  std::string find_buffer_in_reassembler( uint64_t first_index, std::string& data );
-  std::string check_reassembler( uint64_t first_index, std::string& data, bool isCache );
-  uint64_t get_eof() { return eof_index; }
-  uint64_t get_byte() { return byte_writed_index; }
-  ByteStream& byteStream() { return output_; }
-  const ByteStream& byteStream() const { return output_; }
+
+  // 调试/速度测试用 accessor（兼容原测试）
+  uint64_t get_byte() const { return next_index_; }
+  uint64_t get_eof() const { return eof_index_; }
 
 private:
+  void merge_into_buffer( uint64_t first_index, std::string data );
+  static std::string merge_overlap( uint64_t a_start,
+                                    const std::string& a,
+                                    uint64_t b_start,
+                                    const std::string& b );
+
   ByteStream output_;
-  // 存储待处理的数据
-  std::map<uint64_t, std::string> buffer_in_reassembler = {};
-  std::map<uint64_t, uint64_t> data_index = {};
-  // uint64_t total_bytes_pending = 0;
-  uint64_t byte_writed_index = 0;
-  uint64_t eof_index = UINT64_MAX;
+  std::map<uint64_t, std::string> buffer_ {}; // 待写入的片段，按索引有序
+
+  uint64_t next_index_ { 0 }; // 下一个待写入输出流的绝对索引（= 已写入字节数）
+  uint64_t eof_index_ { 0 };  // 流末尾的绝对索引（仅当 has_eof_ 时有意义）
+  bool has_eof_ { false };
 };

@@ -1,121 +1,109 @@
 #include "reassembler.hh"
 #include "byte_stream.hh"
-#include "debug.hh"
-#include <iostream>
+
+#include <algorithm>
+#include <utility>
+
 using namespace std;
 
-// 主要函数
 void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring )
 {
+  const uint64_t cap = output_.writer().available_capacity();
+  const uint64_t first_unacceptable = next_index_ + cap; // 窗口上界（绝对流索引）
 
-  // 该数据的最后索引
-  uint64_t last_index_data = first_index + data.size();
-  // 流的容量
-  uint64_t capacity = writer().get_capacity();
+  // 记住 EOF（仅当明确知道流的终点时）
   if ( is_last_substring ) {
-    eof_index = first_index + data.size();
+    has_eof_ = true;
+    eof_index_ = first_index + data.size();
   }
-  if ( first_index < byte_writed_index ) {
-    // 如果输出的index小于之前的，应该去掉重复部分
-    if ( last_index_data < byte_writed_index ) {
-      data.clear();
-    } else {
-      data = data.substr( byte_writed_index - first_index, writer().available_capacity() );
-      first_index = byte_writed_index;
+
+  // 1) 丢弃已经写入输出流的部分
+  if ( first_index < next_index_ ) {
+    if ( first_index + data.size() <= next_index_ ) {
+      return; // 整个片段都已写过
     }
+    data = data.substr( next_index_ - first_index );
+    first_index = next_index_;
   }
 
-  if ( first_index == byte_writed_index ) {
-
-    // index刚好等于
-    data = check_reassembler( first_index, data, false );
-    data = data.substr( 0, std::min( data.size(), writer().available_capacity() ) );
-    output_.writer().push( data );
-
-    byte_writed_index += data.size();
-  } else {
-    // 如果是后面的，则判断是否满足容量，不满足就丢弃，若满足还要在判断重叠
-    // 逻辑错误修改，capacity是bytestream窗口的大小，eof_index才是data最后的大小（需要多个window大小）
-    if ( first_index <= eof_index ) {
-      data = data.substr( 0, std::min( data.size(), capacity - first_index ) );
-      check_reassembler( first_index, data, true );
-    }
+  // 2) 丢弃超出窗口的部分（即使前面的空洞被填上也无法写入）
+  if ( first_index >= first_unacceptable ) {
+    return;
   }
-  if ( is_last_substring ) {
-    eof_index = std::max( eof_index, first_index + data.size() );
+  if ( first_index + data.size() > first_unacceptable ) {
+    data.resize( first_unacceptable - first_index );
   }
 
-  // 关闭流
-  if ( byte_writed_index == eof_index ) {
+  // 3) 合并进有序片段集合
+  merge_into_buffer( first_index, std::move( data ) );
+
+  // 4) 把连续到 next_index_ 的前缀冲刷进输出流
+  while ( !buffer_.empty() && buffer_.begin()->first == next_index_ ) {
+    next_index_ += buffer_.begin()->second.size();
+    output_.writer().push( std::move( buffer_.begin()->second ) );
+    buffer_.erase( buffer_.begin() );
+  }
+
+  // 5) 已写入到 EOF，关闭流
+  if ( has_eof_ && next_index_ == eof_index_ ) {
     output_.writer().close();
   }
 }
-// How many bytes are stored in the Reassembler itself?
-// This function is for testing only; don't add extra state to support it.
+
 uint64_t Reassembler::count_bytes_pending() const
 {
-  uint64_t total_bytes_pending = 0;
-  for ( auto& i : buffer_in_reassembler ) {
-    total_bytes_pending += i.second.size();
+  uint64_t total = 0;
+  for ( const auto& [idx, bytes] : buffer_ ) {
+    total += bytes.size();
   }
-
-  return total_bytes_pending;
-}
-std::string overlap( uint64_t first_d1, string& d1, uint64_t first_d2, string& d2 )
-{
-  uint64_t r1 = first_d1 + d1.size();
-  uint64_t r2 = first_d2 + d2.size();
-  if ( r1 == first_d2 ) {
-    return d1 + d2;
-  }
-
-  if ( first_d1 < first_d2 && r1 <= r2 ) {
-    return d1.substr( 0, first_d2 - first_d1 ) + d2;
-  }
-  if ( first_d1 >= first_d2 && r1 <= r2 ) {
-    return d2;
-  }
-  if ( first_d1 < first_d2 && r1 > r2 ) {
-    return d1;
-  }
-
-  if ( first_d1 >= first_d2 && r1 > r2 ) {
-    return d2 + d1.substr( r2 - first_d1 );
-  }
-  if ( r2 == first_d1 ) {
-    return d2 + d1;
-  }
-
-  return d1;
+  return total;
 }
 
-std::string Reassembler::check_reassembler( uint64_t first_index, std::string& data, bool isCache )
+// 区间合并：把 [first_index, first_index + data.size()) 合并进 buffer_，消解所有重叠。
+void Reassembler::merge_into_buffer( uint64_t first_index, std::string data )
 {
-  if ( data.empty() )
-    return data;
-  uint64_t last_index = first_index + data.size();
-  auto it = buffer_in_reassembler.lower_bound( first_index );
-  // 检查前一个区间
-  if ( it != buffer_in_reassembler.begin() ) {
+  uint64_t new_start = first_index;
+  uint64_t new_end = first_index + data.size();
+
+  // 定位第一个可能与新片段重叠的旧片段（可能是 lower_bound 的前一个）
+  auto it = buffer_.lower_bound( new_start );
+  if ( it != buffer_.begin() ) {
     auto prev = std::prev( it );
-    if ( prev->first + prev->second.size() >= first_index ) {
-      it = prev; // 有重叠，往前合并
+    if ( prev->first + prev->second.size() >= new_start ) {
+      it = prev; // 前一个片段伸进了新片段区间，从它开始合并
     }
   }
-  uint64_t newF = first_index, newL = last_index;
-  std::string temp_data = data;
-  // 合并所有重叠区间
-  while ( it != buffer_in_reassembler.end() && it->first <= last_index ) {
 
-    newL = std::max( newL, it->first + it->second.size() );
-    temp_data = overlap( newF, temp_data, it->first, it->second );
-    newF = std::min( newF, it->first );
-    it = buffer_in_reassembler.erase( it ); // 删除旧区间
-  }
-  if ( isCache ) {
-    // 插入合并后的新区间
-    buffer_in_reassembler[newF] = temp_data;
+  // 向后吞并所有起点落在新片段区间内的旧片段
+  while ( it != buffer_.end() && it->first <= new_end ) {
+    data = merge_overlap( new_start, data, it->first, it->second );
+    new_start = min( new_start, it->first );
+    new_end = max( new_end, it->first + it->second.size() );
+    it = buffer_.erase( it );
   }
 
-  return temp_data;
+  buffer_[new_start] = std::move( data );
+}
+
+// 两个重叠片段的字节级拼接。约定：返回 a、b 的并集。
+string Reassembler::merge_overlap( uint64_t a_start,
+                                   const string& a,
+                                   uint64_t b_start,
+                                   const string& b )
+{
+  // 保证 a 位于 b 的左侧（或相同起点）
+  if ( a_start > b_start ) {
+    return merge_overlap( b_start, b, a_start, a );
+  }
+
+  const uint64_t a_end = a_start + a.size();
+  const uint64_t b_end = b_start + b.size();
+
+  // b 完全被 a 覆盖：结果就是 a
+  if ( a_end >= b_end ) {
+    return a;
+  }
+
+  // a 在 b 左侧、部分重叠：a 的前缀 + b 未被覆盖的后缀
+  return a.substr( 0, b_start - a_start ) + b;
 }

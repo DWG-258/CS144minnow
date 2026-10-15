@@ -2,10 +2,9 @@
 
 #include "debug.hh"
 #include <cstdint>
-#include <deque>
 #include <string>
 #include <string_view>
-#include <vector>
+
 class Reader;
 class Writer;
 
@@ -16,7 +15,6 @@ public:
 
   // Helper functions (provided) to access the ByteStream's Reader and Writer interfaces
   Reader& reader();
-  // 加入const版本，可以让const对象也可以调用
   const Reader& reader() const;
   Writer& writer();
   const Writer& writer() const;
@@ -25,18 +23,12 @@ public:
   bool has_error() const { return error_; }; // Has the stream had an error?
 
 protected:
-  // Please add any additional state to the ByteStream here, and not to the Writer and Reader interfaces.
   uint64_t capacity_;
   bool error_ { false };
-  std::deque<char> buffer {};
-  // 当前缓冲区里的大小
-  uint64_t current_size_ { 0 };
-  // 总共push的大小
-  uint64_t total_push_ { 0 };
-  // 当前缓冲区里已弹出的大小
-  uint64_t total_pop_ { 0 };
-  //
-  bool close_ { false };
+  std::string buffer_ {};        // 用 std::string 作为缓冲区，支持批量 append/erase
+  uint64_t total_pushed_ { 0 };  // 累计 push 的字节数
+  uint64_t total_popped_ { 0 };  // 累计 pop 的字节数
+  bool closed_ { false };
 };
 
 class Writer : public ByteStream

@@ -1,175 +1,137 @@
 #include "tcp_sender.hh"
-#include "debug.hh"
 #include "tcp_config.hh"
+
+#include <algorithm>
 
 using namespace std;
 
-// This function is for testing only; don't add extra state to support it.
 uint64_t TCPSender::sequence_numbers_in_flight() const
 {
-
-  uint64_t count = 0;
-  auto it = outstanding_sequences_.begin();
-  if ( sequence_size_aftercut_ > 0 )
-    ++it;
-  for ( auto i = it; i != outstanding_sequences_.end(); ++i )
-    count += i->second.sequence_length();
-
-  return count + sequence_size_aftercut_;
+  return bytes_in_flight_;
 }
 
-// This function is for testing only; don't add extra state to support it.
 uint64_t TCPSender::consecutive_retransmissions() const
 {
-
-  return consecutive_retransmissions_count_;
-}
-
-void TCPSender::push( const TransmitFunction& transmit )
-{
-
-  // create a empty msg and set its property
-  while ( true ) {
-    TCPSenderMessage msg {};
-
-    if ( input_.has_error() )
-      msg.RST = true;
-
-    uint64_t send_size = max( (uint16_t)1, window_size_ ) - sequence_numbers_in_flight();
-
-    if ( stream_seq_ == 0 && send_size > 0 ) {
-      msg.SYN = true;
-      msg.seqno = isn_;
-    }
-
-    uint64_t sender_know_window_size = send_size;
-    if ( send_size > TCPConfig::MAX_PAYLOAD_SIZE ) {
-      send_size = TCPConfig::MAX_PAYLOAD_SIZE;
-    }
-    auto payload_len = send_size;
-    if ( msg.SYN )
-      payload_len = send_size == 0 ? 0 : send_size - 1;
-    read( reader(), payload_len, msg.payload );
-
-    bool is_window_full = sender_know_window_size == msg.payload.size() || send_size == 0;
-    if ( is_window_full && send_size == 0 )
-      break;
-
-    if ( reader().is_finished() && !is_window_full && !is_fin_sent_ ) {
-      msg.FIN = true;
-      is_fin_sent_ = true;
-    }
-    // stream_seq_=reader().bytes_popped();
-
-    msg.seqno = msg.seqno.wrap( stream_seq_, isn_ );
-
-    // start timer
-    if ( msg.sequence_length() > 0 && !retrans_timer_.is_running() ) {
-      retrans_timer_.start();
-    }
-
-    if ( msg.sequence_length() > 0 ) {
-
-      auto msg_length = msg.sequence_length();
-      // trans the msg
-      transmit( msg );
-      // store the not acknoed sequence
-      outstanding_sequences_.emplace( stream_seq_, std::move( msg ) );
-      first_unack_msg_ = outstanding_sequences_.begin()->second;
-      stream_seq_ += msg_length;
-    }
-
-    if ( is_fin_sent_ || window_size_ - sequence_numbers_in_flight() == 0 || reader().bytes_buffered() == 0 )
-      break;
-  }
+  return consecutive_retx_;
 }
 
 TCPSenderMessage TCPSender::make_empty_message() const
 {
-
-  // return TCPSenderMessage (seqno is right but message is empty);
-  TCPSenderMessage msg {};
-  if ( input_.has_error() )
+  TCPSenderMessage msg;
+  msg.seqno = Wrap32::wrap( next_abs_seq_, isn_ );
+  if ( error_ || input_.has_error() ) {
     msg.RST = true;
-
-  msg.seqno = msg.seqno.wrap( stream_seq_, isn_ );
+  }
   return msg;
+}
+
+void TCPSender::push( const TransmitFunction& transmit )
+{
+  // 流出错时：只发送一个带 RST 的空段（不带 payload），然后不再发送新数据
+  if ( input_.has_error() ) {
+    TCPSenderMessage msg;
+    msg.RST = true;
+    msg.seqno = Wrap32::wrap( next_abs_seq_, isn_ );
+    transmit( msg );
+    error_ = true;
+    return;
+  }
+  if ( error_ ) {
+    return;
+  }
+
+  // 只要窗口还有空位，就持续发送
+  while ( bytes_in_flight_ < window_size_ ) {
+    TCPSenderMessage msg;
+
+    if ( !syn_sent_ ) {
+      msg.SYN = true;
+      syn_sent_ = true;
+    }
+
+    // 还能装入多少 payload（扣除 SYN/FIN 占用的序列号）
+    const uint64_t remaining = window_size_ - bytes_in_flight_ - msg.sequence_length();
+    const size_t payload_len = min( remaining, static_cast<uint64_t>( TCPConfig::MAX_PAYLOAD_SIZE ) );
+    read( reader(), payload_len, msg.payload );
+
+    // FIN：流已结束、且 FIN 连同 payload 能塞进窗口时追加
+    if ( !fin_sent_ && reader().is_finished()
+         && msg.sequence_length() + 1 <= window_size_ - bytes_in_flight_ ) {
+      msg.FIN = true;
+      fin_sent_ = true;
+    }
+
+    if ( msg.sequence_length() == 0 ) {
+      break; // 没有新字节可发
+    }
+
+    const uint64_t abs_seq = next_abs_seq_; // 段首绝对序列号
+    msg.seqno = Wrap32::wrap( abs_seq, isn_ );
+    next_abs_seq_ += msg.sequence_length();
+    bytes_in_flight_ += msg.sequence_length();
+
+    outstanding_.push_back( Outstanding { abs_seq, msg } );
+    transmit( msg );
+
+    if ( !timer_running_ ) {
+      timer_running_ = true;
+      abs_expire_ms_ = elapsed_ms_ + rto_;
+    }
+  }
 }
 
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
+  if ( msg.RST ) {
+    error_ = true;
+    return;
+  }
 
   window_size_ = msg.window_size;
-
-  uint64_t revice_left_window = 0;
-  // update outstanding_sequences_
-  if ( msg.ackno.has_value() ) {
-    revice_left_window = msg.ackno.value().unwrap( isn_, stream_seq_ );
-  } else if ( window_size_ == 0 )
-    input_.set_error();
-  // remove the acknoed sequence
-
-  if ( revice_left_window > stream_seq_ || revice_left_window <= old_max_seq_ )
-    return;
-  window_left_edge_ = revice_left_window;
-
-  auto it = outstanding_sequences_.lower_bound( window_left_edge_ );
-  auto prev_it = it == outstanding_sequences_.begin() ? it : prev( it );
-  uint64_t back_seq = prev_it->first + prev_it->second.sequence_length();
-
-  bool is_cut = false;
-  if ( back_seq > window_left_edge_ ) {
-    sequence_size_aftercut_ = back_seq - window_left_edge_;
-
-    is_cut = true;
-    it = prev_it;
-  }
-  for ( auto i = outstanding_sequences_.begin(); i != it; ) {
-    i = outstanding_sequences_.erase( i );
+  if ( !msg.ackno.has_value() ) {
+    return; // 无 ackno（如 SYN 前的空包），忽略
   }
 
-  if ( !is_cut ) {
-    sequence_size_aftercut_ = 0;
+  const uint64_t ack_abs = msg.ackno->unwrap( isn_, next_abs_seq_ );
+  if ( ack_abs > next_abs_seq_ ) {
+    return; // 确认了尚未发送的数据，非法 ACK，忽略
   }
 
-  if ( window_left_edge_ > old_max_seq_ ) {
-    old_max_seq_ = window_left_edge_;
-    // reset RTO_MS
-    RTO_ms_ = initial_RTO_ms_;
-    // restart timer
-    restart_timer( RTO_ms_ );
-    // reset consecutive_retransmissions_count
-    consecutive_retransmissions_count_ = 0;
+  // 累积确认：弹出所有「段尾 <= ack」的完整段
+  while ( !outstanding_.empty()
+          && outstanding_.front().abs_seq + outstanding_.front().length() <= ack_abs ) {
+    bytes_in_flight_ -= outstanding_.front().length();
+    outstanding_.pop_front();
   }
 
-  // all are acknoed, stop timer
-  if ( outstanding_sequences_.empty() )
-    retrans_timer_.stop();
+  // 有新数据被确认 → 复位 RTO 与重传计数
+  if ( ack_abs > last_acked_ ) {
+    last_acked_ = ack_abs;
+    rto_ = initial_RTO_ms_;
+    consecutive_retx_ = 0;
+    if ( outstanding_.empty() ) {
+      timer_running_ = false; // 全部确认，停止定时器
+    } else {
+      abs_expire_ms_ = elapsed_ms_ + rto_; // 仍有在途，重设到期时刻
+    }
+  }
 }
 
 void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& transmit )
 {
-  // the timer is always for the first unacknoed sequence
-  // timer running
-  if ( retrans_timer_.is_running() ) {
+  elapsed_ms_ += ms_since_last_tick;
 
-    retrans_timer_.reduce_time( ms_since_last_tick );
-    // retrans_timer_.reduce_time(ms_since_last_tick);
-    // timer stop
-
-    if ( retrans_timer_.get_RTO() == 0 ) {
-      retrans_timer_.stop();
-      // retransmit the first unacknoed sequence
-
-      transmit( outstanding_sequences_.begin()->second );
-      if ( window_size_ > 0 ) {
-        consecutive_retransmissions_count_++;
-        RTO_ms_ = RTO_ms_ * 2;
-      }
-      // everytime retransmit,restart timer
-      restart_timer( RTO_ms_ );
+  if ( timer_running_ && elapsed_ms_ >= abs_expire_ms_ ) {
+    // 重传队头（最老未确认段）
+    if ( !outstanding_.empty() ) {
+      transmit( outstanding_.front().msg );
     }
-  }
 
-  (void)transmit;
+    // 指数退避：仅当窗口非零时增长（零窗口不是拥塞）
+    if ( window_size_ > 0 ) {
+      ++consecutive_retx_;
+      rto_ *= 2;
+    }
+    abs_expire_ms_ = elapsed_ms_ + rto_;
+  }
 }

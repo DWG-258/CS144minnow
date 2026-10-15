@@ -3,6 +3,7 @@
 #include "reassembler.hh"
 #include "tcp_receiver_message.hh"
 #include "tcp_sender_message.hh"
+#include "wrapping_integers.hh"
 
 class TCPReceiver
 {
@@ -27,11 +28,8 @@ public:
 
 private:
   Reassembler reassembler_;
-  Wrap32 start_stream_ { 0 };
-  uint64_t checkpoint_ { 0 };
-  std::optional<Wrap32> next_seq_no_ {};
-  uint64_t first_index_in_TCP { 0 };
-  bool syn_received_ { false };
-  bool str_finished_ { false };
-  bool fin_received_ { false };
+  Wrap32 isn_ { 0 };             // 连接初始序列号（SYN 的 seqno）
+  uint64_t checkpoint_ { 0 };    // 用于 unwrap 的参考点（= 已重组字节数）
+  bool syn_received_ { false };  // 是否已收到 SYN
+  bool error_ { false };
 };

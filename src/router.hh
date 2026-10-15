@@ -3,8 +3,8 @@
 #include "exception.hh"
 #include "network_interface.hh"
 
-#include <bitset>
 #include <optional>
+#include <vector>
 
 // A route table entry
 struct RouteTableEntry
@@ -21,8 +21,6 @@ class Router
 {
 public:
   // Add an interface to the router
-  // \param[in] interface an already-constructed network interface
-  // \returns The index of the interface after it has been added to the router
   size_t add_interface( std::shared_ptr<NetworkInterface> interface )
   {
     interfaces_.push_back( notnull( "add_interface", std::move( interface ) ) );
@@ -48,7 +46,6 @@ private:
   // The router's collection of network interfaces
   std::vector<std::shared_ptr<NetworkInterface>> interfaces_ {};
 
-  // The router's routing table
-  // TO DO :A better way to store the routing table
-  std::unordered_map<uint32_t, RouteTableEntry> routing_table_ {};
+  // The router's routing table（顺序存储，支持相同前缀、不同长度的多条路由）
+  std::vector<RouteTableEntry> routing_table_ {};
 };
